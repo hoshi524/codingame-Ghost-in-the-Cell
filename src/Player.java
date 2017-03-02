@@ -38,14 +38,10 @@ class Player {
                 state.otherFactories = state.otherFactories.stream().filter(x -> x.remain >= 0).collect(Collectors.toList());
 
                 for (Factory lose : state.ownFactories.stream().filter(x -> x.remain < 0 && x.production > 0).collect(Collectors.toList())) {
-                    int remain = -lose.remain, time = lose.switchTime;
+                    int remain = -lose.remain;
                     Collections.sort(state.ownFactories, (a, b) -> distance[lose.id][a.id] - distance[lose.id][b.id]);
                     for (Factory source : state.ownFactories) {
                         if (source.remain < 0) continue;
-                        if (time < distance[lose.id][source.id]) {
-                            remain += lose.production * (distance[lose.id][source.id] - time);
-                            time = distance[lose.id][source.id];
-                        }
                         int send = Math.min(source.remain, remain);
                         orders.add(new Move(source.id, lose.id, send));
                         source.remain -= send;
@@ -266,7 +262,6 @@ class Player {
         Factory near;
         int otherDist;
         int remain;
-        int switchTime;
         boolean isBomb;
         private int time = 0;
 
@@ -288,16 +283,20 @@ class Player {
         void init1(State state) {
             {
                 remain = this.cyborgs;
-                switchTime = -1;
-                int cyborgs = 0;
-                Collections.sort(troops, (a, b) -> a.remain - b.remain);
+                int cyborgs = 0, time = 0;
+                Collections.sort(troops, (a, b) -> {
+                    if (a.remain != b.remain) return a.remain - b.remain;
+                    int ad = Math.abs(owner.ordinal() - a.owner.ordinal());
+                    int bd = Math.abs(owner.ordinal() - b.owner.ordinal());
+                    return ad - bd;
+                });
                 for (Troop troop : troops) {
                     if (troop.owner == owner) cyborgs += troop.cyborgs;
                     else cyborgs -= troop.cyborgs;
                     int need = this.cyborgs + cyborgs;
-                    if (owner != Owner.neutral) need += production * troop.remain;
-                    if (switchTime == -1 && need < 0) switchTime = need;
-                    if (need < remain) remain = need;
+                    if (owner != Owner.neutral) need += production * (troop.remain - time);
+                    time = troop.remain;
+                    if (remain > need) remain = need;
                 }
                 if (remain > this.cyborgs) remain = this.cyborgs;
             }
