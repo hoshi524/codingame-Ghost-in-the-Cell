@@ -281,7 +281,12 @@ class Player {
         }
 
         void init1(State state) {
-            {
+            if (owner == Owner.neutral) {
+                remain = this.cyborgs;
+                for (Troop troop : troops) {
+                    if (troop.owner == Owner.own) remain -= troop.cyborgs;
+                }
+            } else {
                 remain = this.cyborgs;
                 int cyborgs = 0;
                 Collections.sort(troops, (a, b) -> {
@@ -293,8 +298,7 @@ class Player {
                 for (Troop troop : troops) {
                     if (troop.owner == owner) cyborgs += troop.cyborgs;
                     else cyborgs -= troop.cyborgs;
-                    int need = this.cyborgs + cyborgs;
-                    if (owner != Owner.neutral) need += production * troop.remain;
+                    int need = this.cyborgs + cyborgs + production * troop.remain;
                     if (remain > need) remain = need;
                 }
             }
