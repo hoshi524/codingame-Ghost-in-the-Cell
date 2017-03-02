@@ -80,7 +80,7 @@ class Player {
                             if (source.remain < 1 || source.remain <= target.remain) {
                                 break;
                             }
-                            int send = Math.min(source.remain, target.remain + 1);
+                            int send = target.owner == Owner.neutral ? target.remain + 1 : source.remain;
                             orders.add(new Move(source.id, target.id, send));
                             source.remain -= send;
                             target.remain -= send;
