@@ -283,7 +283,7 @@ class Player {
         void init1(State state) {
             {
                 remain = this.cyborgs;
-                int cyborgs = 0, time = 0;
+                int cyborgs = 0;
                 Collections.sort(troops, (a, b) -> {
                     if (a.remain != b.remain) return a.remain - b.remain;
                     int ad = Math.abs(owner.ordinal() - a.owner.ordinal());
@@ -294,11 +294,9 @@ class Player {
                     if (troop.owner == owner) cyborgs += troop.cyborgs;
                     else cyborgs -= troop.cyborgs;
                     int need = this.cyborgs + cyborgs;
-                    if (owner != Owner.neutral) need += production * (troop.remain - time);
-                    time = troop.remain;
+                    if (owner != Owner.neutral) need += production * troop.remain;
                     if (remain > need) remain = need;
                 }
-                if (remain > this.cyborgs) remain = this.cyborgs;
             }
             isBomb = state.bombs.stream().anyMatch(x -> x.to == id);
             otherDist = state.factories.stream().filter(x -> x.owner != Owner.neutral && x.owner != this.owner).mapToInt(x -> distance[this.id][x.id]).sum();
