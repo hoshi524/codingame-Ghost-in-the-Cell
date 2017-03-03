@@ -41,7 +41,7 @@ class Player {
                     int remain = -lose.remain;
                     Collections.sort(state.ownFactories, (a, b) -> distance[lose.id][a.id] - distance[lose.id][b.id]);
                     for (Factory source : state.ownFactories) {
-                        if (source.remain < 0) continue;
+                        if (source.remain < 1) continue;
                         int send = Math.min(source.remain, remain);
                         orders.add(new Move(source.id, lose.id, send));
                         source.remain -= send;
@@ -86,10 +86,12 @@ class Player {
                         orders.add(new Inc(source));
                         source.remain -= 10;
                     }
-                    if (source.remain > 30) {
-                        source.remain -= 30;
-                        state.factories.stream().filter(x -> x.production == 0).findFirst().ifPresent(x -> {
-                            orders.add(new Move(source.id, x.id, 30));
+                    if (source.remain >= 20) {
+                        state.factories.stream().sorted((a, b) -> (a.ownDist - a.oppDist) - (b.ownDist - b.oppDist)).filter(x -> x.ownDist <= x.oppDist && x.production == 0 && x.sending < 10).findFirst().ifPresent(x -> {
+                            int send = 10;
+                            if (x.owner != Owner.own && x.remain > 0) send += x.remain;
+                            orders.add(new Move(source.id, x.id, send));
+                            source.remain -= send;
                         });
                     }
                     if (source.near != null && (source.production == 3 || source.production == 0) && source.remain > 0) {
@@ -108,10 +110,13 @@ class Player {
 
     class Move extends Order {
         final int from;
+
         final int to;
+
         final int cyborgs;
 
         Move(int from, int to, int cyborgs) {
+            if (cyborgs < 1) throw new RuntimeException();
             this.from = from;
             this.to = to;
             this.cyborgs = cyborgs;
@@ -125,6 +130,7 @@ class Player {
 
     class SendBomb extends Order {
         final int from;
+
         final int to;
 
         SendBomb(int from, int to) {
@@ -155,9 +161,13 @@ class Player {
     class State {
 
         List<Factory> factories = new ArrayList<>();
+
         List<Factory> ownFactories = new ArrayList<>();
+
         List<Factory> otherFactories = new ArrayList<>();
+
         List<Troop> troops = new ArrayList<>();
+
         List<Bomb> bombs = new ArrayList<>();
 
         void input(Scanner in) {
@@ -211,9 +221,13 @@ class Player {
 
     class Bomb {
         final int id;
+
         final Owner owner;
+
         final int from;
+
         final int to;
+
         final int remain;
 
         Bomb(int id, int owner, int from, int to, int remain) {
@@ -232,10 +246,15 @@ class Player {
 
     class Troop {
         final int id;
+
         final Owner owner;
+
         final int from;
+
         final int to;
+
         final int cyborgs;
+
         final int remain;
 
         Troop(int id, int owner, int from, int to, int cyborgs, int remain) {
@@ -255,14 +274,23 @@ class Player {
 
     class Factory {
         final int id;
+
         final Owner owner;
+
         final int cyborgs;
+
         final int production;
+
         final List<Troop> troops = new ArrayList<>();
+
         Factory near;
-        int otherDist;
-        int remain;
+
+        int ownDist, oppDist;
+
+        int remain, sending;
+
         boolean isBomb;
+
         private int time = 0;
 
         Factory(int id, int owner, int cyborgs, int production) {
@@ -281,13 +309,16 @@ class Player {
         }
 
         void init1(State state) {
+            sending = 0;
+            remain = this.cyborgs;
             if (owner == Owner.neutral) {
-                remain = this.cyborgs;
                 for (Troop troop : troops) {
-                    if (troop.owner == Owner.own) remain -= troop.cyborgs;
+                    if (troop.owner == Owner.own) {
+                        remain -= troop.cyborgs;
+                        sending += sending;
+                    }
                 }
             } else {
-                remain = this.cyborgs;
                 int cyborgs = 0;
                 Collections.sort(troops, (a, b) -> {
                     if (a.remain != b.remain) return a.remain - b.remain;
@@ -296,14 +327,17 @@ class Player {
                     return ad - bd;
                 });
                 for (Troop troop : troops) {
-                    if (troop.owner == owner) cyborgs += troop.cyborgs;
-                    else cyborgs -= troop.cyborgs;
+                    if (troop.owner == Owner.own) sending += troop.cyborgs;
+                    if (troop.owner == owner) {
+                        cyborgs += troop.cyborgs;
+                    } else cyborgs -= troop.cyborgs;
                     int need = this.cyborgs + cyborgs + production * troop.remain;
                     if (remain > need) remain = need;
                 }
             }
             isBomb = state.bombs.stream().anyMatch(x -> x.to == id);
-            otherDist = state.factories.stream().filter(x -> x.owner != Owner.neutral && x.owner != this.owner).mapToInt(x -> distance[this.id][x.id]).sum();
+            ownDist = state.factories.stream().filter(x -> this != x && x.owner == Owner.own).mapToInt(x -> distance[this.id][x.id]).sum();
+            oppDist = state.factories.stream().filter(x -> this != x && x.owner == Owner.opp).mapToInt(x -> distance[this.id][x.id]).sum();
         }
 
         void init2(State state) {
@@ -311,7 +345,7 @@ class Player {
             final int d[] = distance[this.id];
             for (Factory factory : state.ownFactories.stream().sorted((a, b) -> {
                 if (d[a.id] != d[b.id]) return d[a.id] - d[b.id];
-                return a.otherDist - b.otherDist;
+                return a.oppDist - b.oppDist;
             }).collect(Collectors.toList())) {
                 if (this == factory) continue;
                 if (state.factories.stream().filter(x -> x.owner != Owner.own).allMatch(x -> distance[this.id][x.id] > distance[factory.id][x.id])) {
