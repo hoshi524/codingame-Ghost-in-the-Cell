@@ -7,6 +7,7 @@ class Player {
         new Player().solve();
     }
 
+    private int turn = 0;
     private int distance[][];
 
     private void solve() {
@@ -32,74 +33,74 @@ class Player {
                 state.input(in);
                 orders.clear();
 
-                if (state.isInProductionFactory()) {
-                    state.otherFactories = state.otherFactories.stream().filter(x -> x.production > 0 || x.remain == 0).collect(Collectors.toList());
-                }
-                state.otherFactories = state.otherFactories.stream().filter(x -> x.remain >= 0).collect(Collectors.toList());
+                state.otherFactories = state.otherFactories.stream().filter(x -> x.result != Owner.aly).collect(Collectors.toList());
 
-                for (Factory lose : state.ownFactories.stream().filter(x -> x.remain < 0 && x.production > 0).collect(Collectors.toList())) {
-                    int remain = -lose.remain;
-                    Collections.sort(state.ownFactories, (a, b) -> distance[lose.id][a.id] - distance[lose.id][b.id]);
-                    for (Factory source : state.ownFactories) {
-                        if (source.remain < 1) continue;
-                        int send = Math.min(source.remain, remain);
+                for (Factory lose : state.allyFactories.stream().filter(x -> x.reserve < 0 && x.production > 0).collect(Collectors.toList())) {
+                    int reserve = -lose.reserve;
+                    Collections.sort(state.allyFactories, (a, b) -> distance[lose.id][a.id] - distance[lose.id][b.id]);
+                    for (Factory source : state.allyFactories) {
+                        if (source.reserve < 1) continue;
+                        int send = Math.min(source.reserve, reserve);
                         orders.add(new Move(source.id, lose.id, send));
-                        source.remain -= send;
-                        remain -= send;
-                        if (remain <= 0) break;
+                        source.reserve -= send;
+                        reserve -= send;
+                        if (reserve <= 0) break;
                     }
                 }
 
-                if (bomb > 0) {
-                    int max_production = state.factories.stream().mapToInt(x -> x.production).max().getAsInt();
-                    Optional<Factory> target = state.otherFactories.stream().filter(x -> !bombed[x.id] && x.owner == Owner.opp && x.production == max_production).findFirst();
+                while (turn > 0 && bomb > 0) {
+                    int max_production = state.factories.stream().filter(x -> x.result == Owner.opp).mapToInt(x -> x.production).max().getAsInt();
+                    Optional<Factory> target = state.otherFactories.stream().filter(x -> !bombed[x.id] && x.result == Owner.opp && x.production == max_production).findFirst();
                     if (target.isPresent()) {
-                        Optional<Factory> source = state.ownFactories.stream().sorted((a, b) -> distance[target.get().id][a.id] - distance[target.get().id][b.id]).findFirst();
+                        Optional<Factory> source = state.allyFactories.stream().sorted((a, b) -> distance[target.get().id][a.id] - distance[target.get().id][b.id]).findFirst();
                         if (source.isPresent()) {
                             orders.add(new SendBomb(source.get().id, target.get().id));
                             bombed[target.get().id] = true;
                             --bomb;
                         }
-                    }
+                    } else break;
                 }
 
-                for (Factory source : state.ownFactories) {
-                    if (source.near == null) {
+                for (Factory s : state.allyFactories) {
+                    if (s.near == null) {
+                        int d[] = distance[s.id];
                         Collections.sort(state.otherFactories, (a, b) -> {
-                            int av = 10 * a.production - a.remain - distance[source.id][a.id] * 5 + (a.owner == Owner.neutral ? 10 : 0);
-                            int bv = 10 * b.production - b.remain - distance[source.id][b.id] * 5 + (b.owner == Owner.neutral ? 10 : 0);
+                            int av = (a.owner == Owner.neutral ? 30 : 10) * a.production - a.cyborgs + a.alyCyb - a.oppCyb - d[a.id] * 10;
+                            int bv = (b.owner == Owner.neutral ? 30 : 10) * b.production - b.cyborgs + b.alyCyb - b.oppCyb - d[b.id] * 10;
                             return bv - av;
                         });
-                        for (Factory target : state.otherFactories) {
-                            if (target.remain < 0) continue;
-                            target.addCyborg(distance[source.id][target.id] + 1);
-                            if (source.remain < 1 || source.remain <= target.remain) {
+                        for (Factory t : state.otherFactories) {
+                            int valid = t.cyborgs - t.alyCyb + t.oppCyb;
+                            if (t.owner != Owner.neutral && !t.isBomb) valid += t.production * d[t.id];
+                            if (valid < 0) continue;
+                            if (s.reserve < 1 || s.reserve <= valid) {
                                 break;
                             }
-                            int send = target.owner == Owner.neutral ? target.remain + 1 : source.remain;
-                            orders.add(new Move(source.id, target.id, send));
-                            source.remain -= send;
-                            target.remain -= send;
+                            int send = t.owner == Owner.neutral ? valid + 1 : s.reserve;
+                            orders.add(new Move(s.id, t.id, send));
+                            s.reserve -= send;
+                            t.alyCyb += send;
                         }
                     }
-                    if (source.remain >= 10 && source.production < 3) {
-                        orders.add(new Inc(source));
-                        source.remain -= 10;
+                    if (s.reserve >= 10 && s.production < 3) {
+                        orders.add(new Inc(s));
+                        s.reserve -= 10;
                     }
-                    if (source.remain >= 20) {
-                        state.factories.stream().sorted((a, b) -> (a.ownDist - a.oppDist) - (b.ownDist - b.oppDist)).filter(x -> x.ownDist <= x.oppDist && x.production == 0 && x.sending < 10).findFirst().ifPresent(x -> {
+                    if (s.reserve >= 20) {
+                        state.factories.stream().sorted((a, b) -> (a.ownDist - a.oppDist) - (b.ownDist - b.oppDist)).filter(x -> x.ownDist <= x.oppDist && x.production == 0 && x.alyCyb < 10).findFirst().ifPresent(x -> {
                             int send = 10;
-                            if (x.owner != Owner.own && x.remain > 0) send += x.remain;
-                            orders.add(new Move(source.id, x.id, send));
-                            source.remain -= send;
+                            if (x.owner != Owner.aly && x.reserve > 0) send += x.reserve;
+                            orders.add(new Move(s.id, x.id, send));
+                            s.reserve -= send;
                         });
                     }
-                    if (source.near != null && (source.production == 3 || source.production == 0) && source.remain > 0) {
-                        orders.add(new Move(source.id, source.near.id, source.remain));
-                        source.remain = 0;
+                    if (s.near != null && (s.production == 3 || s.production == 0) && s.reserve > 0) {
+                        orders.add(new Move(s.id, s.near.id, s.reserve));
+                        s.reserve = 0;
                     }
                 }
                 System.out.println(orders.isEmpty() ? "WAIT" : orders.stream().map(x -> x.toString()).collect(Collectors.joining(";")));
+                ++turn;
             }
         }
     }
@@ -162,7 +163,7 @@ class Player {
 
         List<Factory> factories = new ArrayList<>();
 
-        List<Factory> ownFactories = new ArrayList<>();
+        List<Factory> allyFactories = new ArrayList<>();
 
         List<Factory> otherFactories = new ArrayList<>();
 
@@ -173,7 +174,7 @@ class Player {
         void input(Scanner in) {
             factories.clear();
             troops.clear();
-            ownFactories.clear();
+            allyFactories.clear();
             otherFactories.clear();
             bombs.clear();
             for (int i = 0, entityCount = in.nextInt(); i < entityCount; i++) {
@@ -187,7 +188,7 @@ class Player {
                 if (entityType.equals("FACTORY")) {
                     Factory factory = new Factory(entityId, arg1, arg2, arg3);
                     factories.add(factory);
-                    if (factory.owner == Owner.own) ownFactories.add(factory);
+                    if (factory.owner == Owner.aly) allyFactories.add(factory);
                     else otherFactories.add(factory);
                 } else if (entityType.equals("BOMB")) {
                     Bomb bomb = new Bomb(entityId, arg1, arg2, arg3, arg4);
@@ -211,11 +212,6 @@ class Player {
             for (Factory f : factories) {
                 f.init2(this);
             }
-        }
-
-        boolean isInProductionFactory() {
-            for (Factory f : otherFactories) if (f.production > 0) return true;
-            return false;
         }
     }
 
@@ -287,7 +283,9 @@ class Player {
 
         int ownDist, oppDist;
 
-        int remain, sending;
+        Owner result;
+
+        int reserve, alyCyb, oppCyb;
 
         boolean isBomb;
 
@@ -300,55 +298,51 @@ class Player {
             this.production = production;
         }
 
-        void addCyborg(int time) {
-            if (owner == Owner.neutral || isBomb) return;
-            if (this.time < time) {
-                remain += production * (time - this.time);
-                this.time = time;
-            }
-        }
-
         void init1(State state) {
-            sending = 0;
-            remain = this.cyborgs;
-            if (owner == Owner.neutral) {
-                for (Troop troop : troops) {
-                    if (troop.owner == Owner.own) {
-                        remain -= troop.cyborgs;
-                        sending += sending;
-                    }
+            result = owner;
+            reserve = cyborgs;
+            alyCyb = 0;
+            oppCyb = 0;
+            int time = 0;
+            int currentCyb = cyborgs;
+            Collections.sort(troops, (a, b) -> {
+                if (a.remain != b.remain) return a.remain - b.remain;
+                int ad = Math.abs(owner.ordinal() - a.owner.ordinal());
+                int bd = Math.abs(owner.ordinal() - b.owner.ordinal());
+                return ad - bd;
+            });
+            for (Troop troop : troops) {
+                if (troop.owner == Owner.aly) {
+                    alyCyb += troop.cyborgs;
+                } else {
+                    oppCyb += troop.cyborgs;
                 }
-            } else {
-                int cyborgs = 0;
-                Collections.sort(troops, (a, b) -> {
-                    if (a.remain != b.remain) return a.remain - b.remain;
-                    int ad = Math.abs(owner.ordinal() - a.owner.ordinal());
-                    int bd = Math.abs(owner.ordinal() - b.owner.ordinal());
-                    return ad - bd;
-                });
-                for (Troop troop : troops) {
-                    if (troop.owner == Owner.own) sending += troop.cyborgs;
-                    if (troop.owner == owner) {
-                        cyborgs += troop.cyborgs;
-                    } else cyborgs -= troop.cyborgs;
-                    int need = this.cyborgs + cyborgs + production * troop.remain;
-                    if (remain > need) remain = need;
+                if (result == Owner.neutral) currentCyb -= troop.cyborgs;
+                else {
+                    currentCyb += production * (troop.remain - time);
+                    if (result == troop.owner) currentCyb += troop.cyborgs;
+                    else currentCyb -= troop.cyborgs;
+                }
+                time = troop.remain;
+                if (reserve > currentCyb) reserve = currentCyb;
+                if (currentCyb < 0) {
+                    currentCyb *= -1;
+                    result = troop.owner;
                 }
             }
             isBomb = state.bombs.stream().anyMatch(x -> x.to == id);
-            ownDist = state.factories.stream().filter(x -> this != x && x.owner == Owner.own).mapToInt(x -> distance[this.id][x.id]).sum();
+            ownDist = state.factories.stream().filter(x -> this != x && x.owner == Owner.aly).mapToInt(x -> distance[this.id][x.id]).sum();
             oppDist = state.factories.stream().filter(x -> this != x && x.owner == Owner.opp).mapToInt(x -> distance[this.id][x.id]).sum();
         }
 
         void init2(State state) {
             near = null;
             final int d[] = distance[this.id];
-            for (Factory factory : state.ownFactories.stream().sorted((a, b) -> {
-                if (d[a.id] != d[b.id]) return d[a.id] - d[b.id];
-                return a.oppDist - b.oppDist;
+            for (Factory factory : state.factories.stream().filter(x -> x.result == Owner.aly).sorted((a, b) -> {
+                return (d[a.id] - d[b.id]) * 8 + (a.oppDist - b.oppDist);
             }).collect(Collectors.toList())) {
                 if (this == factory) continue;
-                if (state.factories.stream().filter(x -> x.owner != Owner.own).allMatch(x -> distance[this.id][x.id] > distance[factory.id][x.id])) {
+                if (state.factories.stream().filter(x -> x.result != Owner.aly).allMatch(x -> distance[this.id][x.id] > distance[factory.id][x.id])) {
                     near = factory;
                     break;
                 }
@@ -357,12 +351,12 @@ class Player {
 
         @Override
         public String toString() {
-            return Arrays.deepToString(new Object[]{"id", id, "owner", owner, "production", production, "troops", troops.size(), "cyborgs", cyborgs, "remain", remain});
+            return Arrays.deepToString(new Object[]{"id", id, "owner", owner, "production", production, "troops", troops.size(), "cyborgs", cyborgs});
         }
     }
 
     enum Owner {
-        own(1), opp(-1), neutral(0);
+        aly(1), opp(-1), neutral(0);
 
         private final int id;
 
